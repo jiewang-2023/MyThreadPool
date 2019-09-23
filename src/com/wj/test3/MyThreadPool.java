@@ -12,6 +12,25 @@ import static java.lang.Thread.sleep;
 /**
  * @author jie
  * @date 2019/9/20 23:06
+ * ━━━━━━神兽出没━━━━━━
+ * 　　　┏┓　　　┏┓
+ * 　　┏┛┻━━━┛┻┓
+ * 　　┃　　　　　　　┃
+ * 　　┃　　　━　　　┃
+ * 　　┃　┳┛　┗┳　┃
+ * 　　┃　　　　　　　┃
+ * 　　┃　　　┻　　　┃
+ * 　　┃　　　　　　　┃
+ * 　　┗━┓　　　┏━┛
+ * 　　　　┃　　　┃神兽保佑, 永无BUG!
+ * 　　　　 ┃　　　┃Code is far away from bug with the animal protecting
+ * 　　　　┃　　　┗━━━┓
+ * 　　　　┃　　　　　　　┣┓
+ * 　　　　┃　　　　　　　┏┛
+ * 　　　　┗┓┓┏━┳┓┏┛
+ * 　　　　　┃┫┫　┃┫┫
+ * 　　　　　┗┻┛　┗┻┛
+ * ━━━━━━感觉萌萌哒━━━━━━
  */
 public class MyThreadPool implements ThreadPool {
 
@@ -81,17 +100,17 @@ public class MyThreadPool implements ThreadPool {
         thread = new Thread(this::run);
         thread.start();
         Object[] coreIds = this.workers.stream().map(Worker::getId).toArray();
-        System.out.println("线程池初始化完毕...  初始化核心线程 = " + Arrays.toString(coreIds));
+        System.out.println("线程池初始化完毕...  初始化核心线程id: = " + Arrays.toString(coreIds));
     }
 
     /**
      * 创建工作线程
      */
     private void createWorker(boolean isCore) {
-        Worker worker = new Worker(isCore);
+        Worker worker = new Worker(isCore, true);
         workers.add(worker);
         worker.startWorker();
-        this.activeSize++;
+        this.activeSize++;//todo 试题打上条件， 先执行任务再扩容线程
     }
 
     /**
@@ -113,7 +132,6 @@ public class MyThreadPool implements ThreadPool {
                     iter.remove();
                     reSize--;
                     activeSize--;
-                    System.out.println("被回收的线程id : " + next.getId());
                 }
             }
             System.err.println("回收线程：" + this);
@@ -128,10 +146,18 @@ public class MyThreadPool implements ThreadPool {
     private void run() {
         while (!destory) {
             try {
-                sleep(5000L);
+                sleep(3000L);
 //                扩容线程
-                if (activeSize < maxSize && (tasks.size() > activeSize || tasks.size() > maxSize)) {
+                if (activeSize < maxSize && (tasks.size() > activeSize)) {
+                    boolean b = true;
+                    while (!b){
+                        b = !workers.get(0).isNew && !workers.get(1).isNew &&
+                                !workers.get(2).isNew && !workers.get(3).isNew && !workers.get(4).isNew;
+                    }
+
+
                     for (int i = activeSize; i < maxSize; i++) {
+                        //扩容的线程 ，可回收
                         createWorker(false);
                     }
                     this.activeSize = maxSize;
@@ -161,22 +187,28 @@ public class MyThreadPool implements ThreadPool {
 //      共用tasks这把锁，添加和取任务不能同时进行
         synchronized (tasks) {
             // System.out.println("加任务 = " + Thread.currentThread().getName()+Thread.currentThread().getState());
-//            wait把锁让给worker去执行任务
-            if (tasks.size() == TASK_MAX_SIZE) {
+//
+       /*     if (tasks.size() == TASK_MAX_SIZE) {
                 try {
-                    sleep(6000);
+//                    sleep(10000);
+                   tasks. wait(4000);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-            }
+            }*/
 //            线程池满了，任务超了执行相应的策略
             if (tasks.size() > TASK_MAX_SIZE) {
-                System.err.println("超了..." + "当前活跃线程数：" + activeSize + "  当前任务数" + tasks.size());
                 reject(task); //
-            } else {
-                //添加任务
-                tasks.offer(task);
+            }else {
+            //添加任务
+            tasks.offer(task);
             }
+            try {
+                sleep(200);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
 //            唤醒等待的线程执行任务
             tasks.notifyAll();
         }
@@ -192,16 +224,16 @@ public class MyThreadPool implements ThreadPool {
 //        还有任务，睡一会...
         while (!tasks.isEmpty()) {
             try {
-                sleep(100);
+                sleep(50);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }
 
-        workers.forEach(Worker::stopWorker);
         this.destory = true;
-        tasks.clear();
         thread.interrupt();
+        workers.forEach(Worker::stopWorker);
+        tasks.clear();
         System.out.println("关闭线程池...");
         System.exit(0);
     }
@@ -246,9 +278,12 @@ public class MyThreadPool implements ThreadPool {
     private final class Worker extends Thread {
         //        标记是否是核心线程，核心线程不销毁
         private boolean isCore = false;
+        // 标记是否新线程
+        private boolean isNew = false;
 
-        public Worker(boolean isCore) {
+        public Worker(boolean isCore, boolean isNew) {
             this.isCore = isCore;
+            this.isNew = isNew;
         }
 
         @Override
@@ -275,6 +310,7 @@ public class MyThreadPool implements ThreadPool {
                 if (Objects.nonNull(task)) {
 //                       跑任务
                     task.run();
+                    this.isNew = false;
                 }
             }
         }

@@ -20,9 +20,9 @@ public class TestMyThreadPool {
         IntStream.range(0, 48).forEach(i ->
                 myThreadPool.submit(() -> {
                     try {
-                    System.out.printf("[线程] - [%s] 开始工作...\n", Thread.currentThread().getName());
-                        Thread.sleep(2000);
-                    System.out.printf("[线程] - [%s] 工作完毕...\n", Thread.currentThread().getName());
+                    System.out.printf("[线程] - [%s] 开始工作...\n", Thread.currentThread().getId());
+                        Thread.sleep(3000);
+                    System.out.printf("[线程] - [%s] 工作完毕...\n", Thread.currentThread().getId());
                     } catch (InterruptedException e) {}
                 })
         );
