@@ -30,36 +30,29 @@ import static java.lang.Thread.sleep;
  * 　　　　┗┓┓┏━┳┓┏┛
  * 　　　　　┃┫┫　┃┫┫
  * 　　　　　┗┻┛　┗┻┛
- * ━━━━━━感觉萌萌哒━━━━━━
  */
 public class MyThreadPool implements ThreadPool {
 
-    //最大接收任务
-    private static final int TASK_MAX_SIZE = 16;
+
     //任务队列容器
     private final BlockingQueue<Runnable> tasks;
-    /**
-     * 线程集合
-     * Collections.synchronizedList()
-     * 返回由指定列表支持的同步（线程安全）列表。 为了保证串行访问，重要的是通过返回的列表完成对后台列表的所有访问。
-     * 在迭代时，用户必须在返回的列表上手动同步
-     */
+    //工作线程集合
     private final List<Worker> workers;
-    //线程池是否销毁
-    private volatile boolean destory = false;
-    //最大线程
-    private int maxSize;
     //核心线程数
     private volatile int corePoolSize;
-    //活跃线程
-    private volatile int activeSize;
+    //最大线程
+    private int maxSize;
+    //当前线程数   volatile 可见性【一个线程修改了某个变量值，新值对其他线程是立即可见的】，有序性【禁止进行指令重排序】  单次读写原子性，不能保证i++
+    //todo
+    private volatile int activeSize = 0;
     //线程空闲时间
     private long keepAliveTime;
+    //线程池是否销毁
+    private volatile boolean destory = false;
     //维护线程池的线程
     private Thread thread;
-    //策略模式
-    private MyRejectionStrategy handler = new MyAbortPolicy();
-
+    //初始化丢弃策略
+    private MyRejectionStrategy handler = new MyDiscardOldestPolicy();
 
     public MyThreadPool() {
         //偷个懒...
@@ -67,38 +60,42 @@ public class MyThreadPool implements ThreadPool {
     }
 
     public MyThreadPool(int corePoolSize, int maxSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> tasks) {
+//        校验参数是否正确
         if (corePoolSize < 1 || maxSize < corePoolSize || keepAliveTime < 0) {
-            throw new IllegalArgumentException("请输入正确的参数");
+            throw new IllegalArgumentException("请输入正确的参数...");
         }
         Objects.requireNonNull(tasks);
 
         this.corePoolSize = corePoolSize;
         this.maxSize = maxSize;
+        //将时间转为以秒为单位
         this.keepAliveTime = unit.toMillis(keepAliveTime);
         this.tasks = tasks;
+        /**
+         * Collections.synchronizedList()
+         * 返回由指定列表支持的同步（线程安全）列表。 为了保证串行访问，重要的是通过返回的列表完成对后台列表的所有访问。
+         * 在迭代时，必须在返回的列表上手动同步
+         */
         workers = Collections.synchronizedList(new ArrayList<>(maxSize));
+        //初始化线程池
         initThreadPool();
     }
 
-    /**
-     * 调用给定任务的拒绝执行处理程序
-     *
-     * @param task
-     */
-    final void reject(Runnable task) {
-        handler.rejectedExecution(task, this);
-    }
 
     /**
      * 初始化线程池
      */
     private void initThreadPool() {
+//        创建核心线程
         IntStream.range(0, corePoolSize).forEach(a -> {
             this.createWorker(true);
         });
+//        初始化当前线程数
         this.activeSize = this.corePoolSize;
+        //创建维护线程池的线程
         thread = new Thread(this::run);
         thread.start();
+        //记录下核心线程的id
         Object[] coreIds = this.workers.stream().map(Worker::getId).toArray();
         System.out.println("线程池初始化完毕...  初始化核心线程id: = " + Arrays.toString(coreIds));
     }
@@ -107,31 +104,34 @@ public class MyThreadPool implements ThreadPool {
      * 创建工作线程
      */
     private void createWorker(boolean isCore) {
+//        创建工作线程，isCore 标记是否是核心线程， isNew 标记是否是新的线程
         Worker worker = new Worker(isCore, true);
         workers.add(worker);
         worker.startWorker();
-        this.activeSize++;//todo 试题打上条件， 先执行任务再扩容线程
+        this.activeSize--;
     }
 
     /**
-     * 减少非核心线程
+     * 减少工作线程
      */
     private void reduceThread() {
         //   防止线程在submit的时候，其他线程获取到锁
         synchronized (workers) {
+            // 当前线程数 减去 核心线程数 == 需要移除的线程数
             int reSize = activeSize - corePoolSize;
             Iterator<Worker> iter = workers.iterator();
-//          ArrayList 不能在迭代中移除元素，必须使用迭代器的remove()
             while (iter.hasNext()) {
                 if (reSize <= 0) {
                     break;
                 }
                 Worker next = iter.next();
+//                判断是不是核心线程
                 if (!next.isCore) {
                     next.stopWorker();
+//          ArrayList 不能在迭代中移除元素，必须使用迭代器的remove()
                     iter.remove();
-                    reSize--;
                     activeSize--;
+                    reSize--;
                 }
             }
             System.err.println("回收线程：" + this);
@@ -144,31 +144,43 @@ public class MyThreadPool implements ThreadPool {
      * 维护线程池
      */
     private void run() {
+        //判断线程池是否已关闭
         while (!destory) {
             try {
+                //每个3秒判断一次
                 sleep(3000L);
-//                扩容线程
-                if (activeSize < maxSize && (tasks.size() > activeSize)) {
+//                扩容线程  线程池还没满 && 任务队列size 大于 当前线程数
+                if (activeSize < maxSize && tasks.size() > activeSize) {
+                    //保证都以执行过任务......
                     boolean b = true;
-                    while (!b){
+                    while (!b) {
                         b = !workers.get(0).isNew && !workers.get(1).isNew &&
                                 !workers.get(2).isNew && !workers.get(3).isNew && !workers.get(4).isNew;
                     }
-
-
+//                      //扩容到最大线程数
                     for (int i = activeSize; i < maxSize; i++) {
-                        //扩容的线程 ，可回收
+                        //设置为非核心线程
                         createWorker(false);
                     }
+                    //更新当前线程数
                     this.activeSize = maxSize;
                     System.err.println("扩容了..." + this);
-//                    没任务，活跃线程大于5  减少线程
-                } else if (tasks.size() == 0 && activeSize > 5) {
+
+                }   // 没任务 && 当前线程大于5  减少线程
+                else if (tasks.size() == 0 && activeSize > 5) {
+
                     System.err.println("线程空闲ing...");
+                    // 睡 N 秒
                     sleep(this.keepAliveTime);
-                    reduceThread();
+                    //清除线程    没任务清除
+                    if (tasks.size() < 1) {
+                        reduceThread();
+                    } else {
+                        System.out.println("清除线程失败, 来任务了...");
+                    }
                 }
             } catch (InterruptedException e) {
+//                sleep 被Interrupt() 方法打断会抛异常   ，结束维护线程池
                 System.out.println("释放资源...");
             }
         }
@@ -187,38 +199,37 @@ public class MyThreadPool implements ThreadPool {
 //      共用tasks这把锁，添加和取任务不能同时进行
         synchronized (tasks) {
             // System.out.println("加任务 = " + Thread.currentThread().getName()+Thread.currentThread().getState());
-//
-       /*     if (tasks.size() == TASK_MAX_SIZE) {
-                try {
-//                    sleep(10000);
-                   tasks. wait(4000);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }*/
-//            线程池满了，任务超了执行相应的策略
-            if (tasks.size() > TASK_MAX_SIZE) {
-                reject(task); //
-            }else {
-            //添加任务
-            tasks.offer(task);
+
+            //添加任务，如果队列已满添加失败返回false
+            boolean offer = tasks.offer(task);
+            if (!offer) {
+                reject(task);
+                System.out.println("丢弃策略已执行！");
             }
             try {
+//                睡一小会为了让加任务慢点...
                 sleep(200);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-
 //            唤醒等待的线程执行任务
             tasks.notifyAll();
         }
     }
 
+    /**
+     * 判断线程池是否关闭
+     *
+     * @return true已关闭，false未关闭
+     */
     @Override
     public boolean isShutdown() {
         return destory;
     }
 
+    /**
+     * 关闭线程池
+     */
     @Override
     public void shutdown() {
 //        还有任务，睡一会...
@@ -229,12 +240,16 @@ public class MyThreadPool implements ThreadPool {
                 e.printStackTrace();
             }
         }
-
+        //将线程池状态设置为关闭
         this.destory = true;
+        //打断维护线程池的线程
         thread.interrupt();
+        //打断线程池中的线程
         workers.forEach(Worker::stopWorker);
+        //清除任务队列
         tasks.clear();
         System.out.println("关闭线程池...");
+//        .............
         System.exit(0);
     }
 
@@ -246,6 +261,16 @@ public class MyThreadPool implements ThreadPool {
                 ", corePoolSize=" + corePoolSize +
                 ", activeSize=" + activeSize +
                 '}';
+    }
+
+
+    /**
+     * 调用给定任务的拒绝执行处理程序
+     *
+     * @param task 任务
+     */
+    final void reject(Runnable task) {
+        handler.rejectedExecution(task, this);
     }
 
     /**
@@ -266,7 +291,9 @@ public class MyThreadPool implements ThreadPool {
         public void rejectedExecution(Runnable task, MyThreadPool pool) {
 //           线程池是否关闭...
             if (!pool.destory) {
+//                移除队头
                 pool.tasks.poll();
+//                再次提交任务
                 pool.submit(task);
             }
         }
@@ -276,7 +303,7 @@ public class MyThreadPool implements ThreadPool {
      * 工作线程
      */
     private final class Worker extends Thread {
-        //        标记是否是核心线程，核心线程不销毁
+        //标记是否是核心线程，核心线程不销毁
         private boolean isCore = false;
         // 标记是否新线程
         private boolean isNew = false;
@@ -298,8 +325,7 @@ public class MyThreadPool implements ThreadPool {
                         try {
 //                          没任务 wait等待任务
                             tasks.wait();
-
-//                           如果被打断，说明当前线程执行了 interrupt()方法，清除中断状态
+//                           如果被打断，说明当前线程执行了 interrupt()方法，清除中断状态跳出循环  结束时.
                         } catch (InterruptedException e) {
                             break OUTER;
                         }
@@ -308,7 +334,7 @@ public class MyThreadPool implements ThreadPool {
                     task = tasks.poll();
                 }
                 if (Objects.nonNull(task)) {
-//                       跑任务
+//                   跑任务
                     task.run();
                     this.isNew = false;
                 }
@@ -320,7 +346,6 @@ public class MyThreadPool implements ThreadPool {
         }
 
         void stopWorker() {
-            // System.out.println("this.getState() = " + this.getState());
             this.interrupt();
         }
     }

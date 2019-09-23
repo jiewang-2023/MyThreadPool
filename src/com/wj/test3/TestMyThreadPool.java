@@ -15,7 +15,7 @@ import java.util.stream.IntStream;
 public class TestMyThreadPool {
     public static void main(String[] args) throws InterruptedException {
         MyThreadPool myThreadPool =
-                new MyThreadPool(5, 10, 1, TimeUnit.SECONDS, new LinkedBlockingQueue<>(32));
+                new MyThreadPool(5, 10, 1, TimeUnit.SECONDS, new LinkedBlockingQueue<>(16));
 
         IntStream.range(0, 48).forEach(i ->
                 myThreadPool.submit(() -> {
@@ -26,7 +26,7 @@ public class TestMyThreadPool {
                     } catch (InterruptedException e) {}
                 })
         );
-        myThreadPool.shutdown();
+       // myThreadPool.shutdown();
     }
 
 
