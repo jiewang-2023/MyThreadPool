@@ -56,7 +56,7 @@ public class MyThreadPool implements ThreadPool {
     //维护线程池的线程
     private Thread thread;
     //初始化丢弃策略
-    private MyRejectionStrategy handler = new MyDiscardOldestPolicy();
+    private MyRejectionStrategy handler = new MyAbortPolicy();
 
     public MyThreadPool() {
         //偷个懒...
@@ -72,7 +72,7 @@ public class MyThreadPool implements ThreadPool {
 
         this.corePoolSize = corePoolSize;
         this.maxSize = maxSize;
-        //将时间转为以秒为单位
+        //将时间转为以毫秒为单位
         this.keepAliveTime = unit.toMillis(keepAliveTime);
         this.tasks = tasks;
         /**
@@ -92,10 +92,8 @@ public class MyThreadPool implements ThreadPool {
     private void initThreadPool() {
 //        创建核心线程
         IntStream.range(0, corePoolSize).forEach(a -> {
-            this.createWorker(false);
+            this.createWorker(true);
         });
-//        初始化当前线程数
-        this.activeSize.set(this.corePoolSize);
         //创建维护线程池的线程
         thread = new Thread(this::run);
         thread.start();
@@ -162,11 +160,12 @@ public class MyThreadPool implements ThreadPool {
                     int count = 0;
                     while (count < corePoolSize) {
                         for (Worker worker : workers) {
+//                            执行过任务+1
                             if (worker.isTasked) {
                                 count++;
                             }
                         }
-                        if (count < 5) {
+                        if (count < corePoolSize) {
                             count = 0;
                         }
                     }
@@ -175,9 +174,7 @@ public class MyThreadPool implements ThreadPool {
                         //设置为非核心线程
                         createWorker(false);
                     }
-                    //更新当前线程数
-                    this.activeSize.set(maxSize);
-                    System.err.println("扩容了..." + this);
+                    System.err.println("扩容了..." + this + " " +"  当前任务队列大小："+tasks.size());
 
                 }   // 没任务 && 当前线程大于5  减少线程
                 else if (tasks.size() == 0 && activeSize.get() > corePoolSize) {
@@ -259,7 +256,6 @@ public class MyThreadPool implements ThreadPool {
                     }
                 }
             }
-            System.out.println("intVal = " + intVal);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -327,13 +323,13 @@ public class MyThreadPool implements ThreadPool {
      */
     private final class Worker extends Thread {
         //标记是否是核心线程，核心线程不销毁
-        private boolean isCore = false;
+        private boolean isCore;
         // 标记是否已执行过任务
-        private boolean isTasked = false;
+        private boolean isTasked;
 
         /**
-         * @param isCore   true 核心线程，false 扩容的线程
-         * @param isTasked false 未执行任务，true 已执行任务
+         * @param isCore   true 核心线程，  false 扩容的线程
+         * @param isTasked true 已执行任务, false 未执行任务
          */
         public Worker(boolean isCore, boolean isTasked) {
             this.isCore = isCore;

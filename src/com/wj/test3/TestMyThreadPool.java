@@ -19,12 +19,10 @@ public class TestMyThreadPool {
                     System.out.printf("[线程] - [%s] 开始工作...\n", Thread.currentThread().getId());
                         Thread.sleep(3000);
                     System.out.printf("[线程] - [%s] 工作完毕...\n", Thread.currentThread().getId());
-                    } catch (InterruptedException e) {
-                        System.err.println(e.getMessage());
-                    }
+                    } catch (InterruptedException e) { }
                 })
         );
-      //  myThreadPool.shutdown();  不关线程池  线程空闲自动回收
+       // myThreadPool.shutdown();  //不关线程池  线程空闲自动回收
     }
 
 
