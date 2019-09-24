@@ -1,10 +1,6 @@
 package com.wj.test3;
 
-import org.junit.Test;
-
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
@@ -23,10 +19,12 @@ public class TestMyThreadPool {
                     System.out.printf("[线程] - [%s] 开始工作...\n", Thread.currentThread().getId());
                         Thread.sleep(3000);
                     System.out.printf("[线程] - [%s] 工作完毕...\n", Thread.currentThread().getId());
-                    } catch (InterruptedException e) {}
+                    } catch (InterruptedException e) {
+                        System.err.println(e.getMessage());
+                    }
                 })
         );
-       // myThreadPool.shutdown();
+      //  myThreadPool.shutdown();  不关线程池  线程空闲自动回收
     }
 
 
