@@ -10,7 +10,7 @@ public interface ThreadPool {
      *
      * @param task
      */
-    void submit(Runnable task);
+    void execute(Runnable task);
 
     /**
      * 线程池是否关闭
@@ -23,7 +23,6 @@ public interface ThreadPool {
      * 关闭线程池
      */
     void shutdown();
-
 
 
 }

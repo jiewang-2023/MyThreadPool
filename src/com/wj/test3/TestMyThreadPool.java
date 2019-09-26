@@ -14,15 +14,16 @@ public class TestMyThreadPool {
                 new MyThreadPool(5, 10, 1, TimeUnit.SECONDS, new LinkedBlockingQueue<>(16));
 
         IntStream.range(0, 48).forEach(i ->
-                myThreadPool.submit(() -> {
+                myThreadPool.execute(() -> {
                     try {
-                    System.out.printf("[线程] - [%s] 开始工作...\n", Thread.currentThread().getId());
+                        System.out.println(Thread.currentThread().getId() + "线程 开始工作...");
                         Thread.sleep(3000);
-                    System.out.printf("[线程] - [%s] 工作完毕...\n", Thread.currentThread().getId());
-                    } catch (InterruptedException e) { }
+                        System.out.println(Thread.currentThread().getId() + "线程 结束工作......");
+                    } catch (InterruptedException e) {
+                    }
                 })
         );
-       // myThreadPool.shutdown();  //不关线程池  线程空闲自动回收
+         //myThreadPool.shutdown();  //不关线程池  线程空闲自动回收
     }
 
 
