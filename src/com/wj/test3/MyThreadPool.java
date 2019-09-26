@@ -116,18 +116,25 @@ public class MyThreadPool implements ThreadPool {
      * 减少工作线程，保留核心线程
      */
     private void reduceThread() {
+//        手动同步
         synchronized (workers) {
+
             //  保留 corePool
             Iterator<Worker> iter = workers.iterator();
-            while (iter.hasNext() && activeSize.get() != corePoolSize) {
-                Worker next = iter.next();
-                //判断是不是核心线程    是否已执行过任务
-                if (!next.isCore && next.isTasked) {
-                    next.stopWorker();
-                    iter.remove();
+            while (activeSize.get() > corePoolSize) {
+                if (iter.hasNext()) {
+                    Worker next = iter.next();
+                    //判断是不是核心线程
+                    if (!next.isCore && next.getState() == Thread.State.WAITING) {
+                        next.stopWorker();
+                        iter.remove();
 //                    -1
-                    activeSize.getAndDecrement();
+                        activeSize.getAndDecrement();
+                    }
+                } else {
+                    iter = workers.iterator();
                 }
+
             }
             System.err.println("回收线程：" + this);
             Object[] ids = this.workers.stream().map(Worker::getId).toArray();
@@ -141,15 +148,14 @@ public class MyThreadPool implements ThreadPool {
     private void run() {
         //判断线程池是否已关闭
         while (!destory) {
+            // System.out.println("轮询的线程："+Thread.currentThread().getName());
             try {
-                //3秒轮询一次
+                //每3秒轮询一次
                 sleep(3000L);
 //                扩容线程  线程池还没满 && 任务队列size 大于 当前线程数
                 if (activeSize.get() < maxSize && tasks.size() > activeSize.get()) {
-                    //保证核心线程都执行过任务然后开始扩容......
-                    while (workers.stream().filter(w -> w.isTasked).count() < corePoolSize) {}
 //                      //扩容到最大线程数
-                    IntStream.range(activeSize.get(),maxSize).forEach(a -> createWorker(false));
+                    IntStream.range(activeSize.get(), maxSize).forEach(a -> createWorker(false));
                     System.err.println("已扩容：" + this + " " + "  当前任务队列大小：" + tasks.size());
 
                 }   // 没任务 && 当前线程大于5  减少线程
@@ -166,7 +172,8 @@ public class MyThreadPool implements ThreadPool {
                     }
                 }
             } catch (InterruptedException e) {
-//                wait sleep 被interrupt() 方法打断会抛异常  结束维护线程池
+//           interrupt() 方法只是改变中断状态而已，它不会中断一个正在运行的线程。
+//           如果线程被Object.wait, Thread.join和Thread.sleep三种方法之一阻塞，此时调用该线程的interrupt()方法，那么该线程将抛出一个 InterruptedException中断异常。
                 System.out.println("释放资源...");
             }
         }
@@ -182,13 +189,13 @@ public class MyThreadPool implements ThreadPool {
         if (destory) {
             throw new IllegalStateException("线程池已关闭...");
         }
-//      共用tasks这把锁，添加和取任务不能同时进行
+//        notifyAll()     java.lang.IllegalMonitorStateException
         synchronized (tasks) {
+            //   System.out.println("加任务的线程： " + Thread.currentThread().getName());
 
        /*     if (tasks.size() > 16) {
                 reject(task);
             }else {
-            //添加任务，如果队列已满添加失败返回false
             boolean offer = tasks.offer(task);
             }*/
 
@@ -228,14 +235,16 @@ public class MyThreadPool implements ThreadPool {
             while (!tasks.isEmpty()) {
                 sleep(100);
             }
-
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-
+//        直到所有线程结束
         while (workers.stream().filter(w -> w.getState() == Thread.State.TERMINATED).count() < workers.size()) {
-        //打断线程池中的线程
-        workers.forEach(Worker::stopWorker);
+            workers.forEach(w -> {
+                if (w.getState() == Thread.State.WAITING) {
+                    w.stopWorker();
+                }
+            });
         }
         //将线程池状态设置为关闭
         this.destory = true;
@@ -319,20 +328,19 @@ public class MyThreadPool implements ThreadPool {
             OUTER:
             // 当前线程中断返回true，未被中断返回false
             while (!this.isInterrupted()) {
-//                  共用tasks这把锁，添加和取任务不能同时进行
+//                  wait()方法必须在同步代码块或同步方法中调用，否则会抛 java.lang.IllegalMonitorStateException
                 synchronized (tasks) {
-                    // System.out.println("取任务 = " + getName()+getState());
                     while (tasks.isEmpty() && this.isTasked) {
                         try {
 //                          没任务 wait等待任务
                             tasks.wait();
-//                           如果被打断，说明当前线程执行了 interrupt()方法，清除中断状态跳出循环  清理线程时调用了interrupt()
                         } catch (InterruptedException e) {
                             break OUTER;
                         }
                     }
                     //取任务， pool内部有锁
                     task = tasks.poll();
+                    //System.out.println("取任务的线程 = " + Thread.currentThread().getName());
                 }
                 if (Objects.nonNull(task)) {
 //                   跑任务
@@ -347,7 +355,7 @@ public class MyThreadPool implements ThreadPool {
         }
 
         void stopWorker() {
-                this.interrupt();
+            this.interrupt();
         }
     }
 }
