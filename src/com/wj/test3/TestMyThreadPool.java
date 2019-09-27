@@ -23,7 +23,7 @@ public class TestMyThreadPool {
                     }
                 })
         );
-         myThreadPool.shutdown();  //不关线程池  线程空闲自动回收
+         myThreadPool.shutdown();  //关闭线程池
     }
 
 

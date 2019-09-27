@@ -51,7 +51,7 @@ public class MyThreadPool implements ThreadPool {
     //线程空闲时间
     private long keepAliveTime;
     //线程池是否销毁
-    private volatile boolean destory = false;
+    private volatile boolean destroy = false;
     //维护线程池的线程
     private Thread thread;
     //初始化丢弃策略
@@ -147,7 +147,7 @@ public class MyThreadPool implements ThreadPool {
      */
     private void run() {
         //判断线程池是否已关闭
-        while (!destory) {
+        while (!destroy) {
             // System.out.println("轮询的线程："+Thread.currentThread().getName());
             try {
                 //每3秒轮询一次
@@ -186,7 +186,7 @@ public class MyThreadPool implements ThreadPool {
      */
     @Override
     public void execute(Runnable task) {
-        if (destory) {
+        if (destroy) {
             throw new IllegalStateException("线程池已关闭...");
         }
 //        notifyAll()     java.lang.IllegalMonitorStateException
@@ -222,7 +222,7 @@ public class MyThreadPool implements ThreadPool {
      */
     @Override
     public boolean isShutdown() {
-        return destory;
+        return destroy;
     }
 
     /**
@@ -251,7 +251,7 @@ public class MyThreadPool implements ThreadPool {
             });
         }
         //将线程池状态设置为关闭
-        this.destory = true;
+        this.destroy = true;
         //打断维护线程池的线程
         thread.interrupt();
         //资源回收
@@ -297,7 +297,7 @@ public class MyThreadPool implements ThreadPool {
         @Override
         public void rejectedExecution(Runnable task, MyThreadPool pool) {
 //           线程池是否关闭...
-            if (!pool.destory) {
+            if (!pool.destroy) {
                 System.out.println("策略移除前" + pool.tasks.size());
 //                移除队头
                 pool.tasks.poll();
@@ -314,7 +314,7 @@ public class MyThreadPool implements ThreadPool {
     private final class Worker extends Thread {
         //标记是否是核心线程，核心线程不销毁
         private boolean isCore;
-        // 标记是否已执行过任务
+        // 标记是否已执行过任务，first
         private volatile boolean isTasked;
 
         /**
