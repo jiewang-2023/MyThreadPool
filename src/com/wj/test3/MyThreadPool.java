@@ -235,11 +235,8 @@ public class MyThreadPool implements ThreadPool {
             while (!tasks.isEmpty()) {
                 sleep(100);
             }
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        try {
-//            保证任务都已执行完毕
+
+         //   保证任务都已执行完毕
             sleep(5000);
         } catch (InterruptedException e) {
             e.printStackTrace();
