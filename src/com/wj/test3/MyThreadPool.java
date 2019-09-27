@@ -238,6 +238,13 @@ public class MyThreadPool implements ThreadPool {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+        try {
+//            保证任务都已执行完毕
+            sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
 //        直到所有线程结束
         while (workers.stream().filter(w -> w.getState() == Thread.State.TERMINATED).count() < workers.size()) {
             workers.forEach(w -> {
