@@ -1,6 +1,5 @@
 package com.wj.test3;
 
-import java.util.LinkedList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
@@ -13,7 +12,8 @@ public class TestMyThreadPool {
     public static void main(String[] args) throws InterruptedException {
 //        创建线程池
         MyThreadPool myThreadPool =
-                new MyThreadPool(5, 10, 3, TimeUnit.SECONDS, new LinkedBlockingQueue<>(16),new MyThreadPool.MyDiscardOldestPolicy());
+                new MyThreadPool(5, 10, 3, TimeUnit.SECONDS,
+                        new LinkedBlockingQueue<>(16), new MyThreadPool.MyDiscardOldestPolicy());
 
 //        开始提交任务
         IntStream.range(0, 48).forEach(i ->
@@ -26,7 +26,7 @@ public class TestMyThreadPool {
                     }
                 })
         );
-         myThreadPool.shutdown();  //关闭线程池
+        myThreadPool.shutdown();  //关闭线程池
     }
 
 
