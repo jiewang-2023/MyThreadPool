@@ -5,6 +5,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
@@ -27,7 +28,7 @@ public class MyThreadPool implements ThreadPool {
     /**
      * 核心线程数
      */
-    private volatile int corePoolSize;
+    private int corePoolSize;
     /**
      * 最大线程数
      */
@@ -51,7 +52,7 @@ public class MyThreadPool implements ThreadPool {
      */
     private Thread thread;
     /**
-     * 初始化丢弃策略
+     * 丢弃策略
      */
     private MyRejectionStrategy handler;
 
@@ -67,8 +68,9 @@ public class MyThreadPool implements ThreadPool {
         if (corePoolSize < 1 || maxSize < corePoolSize || keepAliveTime < 0) {
             throw new IllegalArgumentException("请输入正确的参数...");
         }
-        Objects.requireNonNull(tasks);
-
+        if (tasks == null || handler == null) {
+            throw new NullPointerException();
+        }
         this.corePoolSize = corePoolSize;
         this.maxSize = maxSize;
         //将时间转为以毫秒为单位
@@ -80,6 +82,8 @@ public class MyThreadPool implements ThreadPool {
          * 原子操作不需要同步
          * 非原子操作需要手动同步
          * 在迭代时，必须在返回的列表上手动同步
+         * 多线程环境下迭代时，iterator.hasNext()里还有元素，
+         * 调用iterator.next()的时候 其他线程也会进来调用next()方法所有必须手动同步
          */
         this.workers = Collections.synchronizedList(new ArrayList<>(maxSize));
         this.handler = handler;
@@ -93,7 +97,7 @@ public class MyThreadPool implements ThreadPool {
     private void initThreadPool() {
 //        创建核心线程,
         IntStream.range(0, corePoolSize).forEach(a -> this.createWorker(true));
-        //创建维护线程池的线程
+        //创建维护线程池的线程，
         thread = new Thread(this::run);
         thread.start();
         //记录下核心线程的id
@@ -118,21 +122,23 @@ public class MyThreadPool implements ThreadPool {
      * 减少工作线程，保留核心线程
      */
     private void reduceThread() {
-//        手动同步
-        synchronized (workers) {
-            Iterator<Worker> iter = workers.iterator();
-            while (iter.hasNext()) {
-                Worker next = iter.next();
-                if (!next.isCore) {
-                    next.stopWorker();
-                    iter.remove();
-                    this.activeSize.getAndDecrement();
-                }
+        Iterator<Worker> iter = workers.iterator();
+//        手动同步，  这里不加锁是因为这里只有一条线程操作workers
+        // synchronized (workers) {
+        while (iter.hasNext()) {
+            // System.out.println("执行移除的线程 = " + Thread.currentThread().getName());
+            Worker next = iter.next();
+            if (!next.isCore) {
+                next.stopWorker();
+                iter.remove();
+                this.activeSize.getAndDecrement();
             }
-            System.err.println("回收线程：" + this);
-            Object[] ids = this.workers.stream().map(Worker::getId).toArray();
-            System.out.println("保留的核心线程 = " + Arrays.toString(ids));
         }
+        //  }
+
+        System.err.println("回收线程：" + this);
+        Object[] ids = this.workers.stream().map(Worker::getId).toArray();
+        System.out.println("保留的核心线程 = " + Arrays.toString(ids));
     }
 
     /**
@@ -143,7 +149,7 @@ public class MyThreadPool implements ThreadPool {
         while (!destroy) {
             try {
 //                轮询，延迟启动保证工作线程先开始工作，
-                sleep(1200L);
+                sleep(1500L);
 //                扩容线程  线程池还没满 && 任务队列不为空  tasks.size() > corePoolSize
                 if (activeSize.get() < maxSize && !tasks.isEmpty()) {
 //                      //扩容到最大线程数
@@ -158,9 +164,12 @@ public class MyThreadPool implements ThreadPool {
                     reduceThread();
                 }
             } catch (InterruptedException e) {
-//           interrupt() 方法只是改变中断状态而已，它不会中断一个正在运行的线程。
-//           如果线程被Object.wait, Thread.join和Thread.sleep三种方法之一阻塞，
-//           此时调用该线程的interrupt()方法，那么该线程将抛出一个 InterruptedException中断异常。
+                /**
+                 * interrupt() 方法只是改变中断状态而已，它不会中断一个正在运行的线程。
+                 *   如果线程的当前状态处于非阻塞状态，那么仅仅是线程的中断标志被修改为true而已；
+                 *   如果线程被Object.wait, Thread.join和Thread.sleep三种方法之一阻塞，
+                 *   此时调用该线程的interrupt()方法，那么该线程将抛出一个 InterruptedException中断异常。
+                 */
                 System.out.println("释放资源...");
             }
         }
@@ -177,22 +186,18 @@ public class MyThreadPool implements ThreadPool {
             throw new IllegalStateException("线程池已关闭......");
         }
         Objects.requireNonNull(task, "请勿提交空任务...");
-//        notifyAll()     java.lang.IllegalMonitorStateException
-        synchronized (tasks) {
-            System.out.println("提交任务");
-            boolean offer = tasks.offer(task);
-            if (!offer) {
-                reject(task);
-            }
-            try {
-                //
-                sleep(200);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-//            唤醒等待的线程执行任务
-            tasks.notifyAll();
+        System.out.println(Thread.currentThread().getName() + "提交任务");
+        boolean offer = tasks.offer(task);
+        if (!offer) {
+            reject(task);
         }
+        try {
+            //提交任务慢点
+            sleep(200);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+//            唤醒等待的线程执行任务
     }
 
     /**
@@ -215,16 +220,16 @@ public class MyThreadPool implements ThreadPool {
             while (!tasks.isEmpty()) {
                 sleep(100);
             }
-//      保证正在执行任务的线程都已执行完毕
-            sleep(5000);
+//          为了显示线程回收效果， 让维护线程去回收线程
+            sleep(6000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-
 //        直到所有线程结束
         while (workers.stream().filter(w -> w.getState() == Thread.State.TERMINATED).count() < workers.size()) {
             workers.forEach(w -> {
-                if (w.getState() == Thread.State.TIMED_WAITING) {
+                if (w.getState() == Thread.State.WAITING) {
+                    w.flag.set(false);
                     w.stopWorker();
                 }
             });
@@ -294,6 +299,8 @@ public class MyThreadPool implements ThreadPool {
     private final class Worker extends Thread {
         //标记是否是核心线程，核心线程不销毁
         private boolean isCore;
+//        true启用线程 false关闭线程
+          volatile AtomicBoolean flag = new AtomicBoolean(true);
 
         /**
          * @param isCore true 核心线程，  false 扩容的线程
@@ -305,19 +312,15 @@ public class MyThreadPool implements ThreadPool {
         @Override
         public void run() {
             Runnable task = null;
-            OUTER:
+
             while (!this.isInterrupted()) {
-                synchronized (tasks) {
-                    while (tasks.isEmpty()) {
-                        try {
-//                          没任务 wait等待任务
-                            tasks.wait(keepAliveTime);
-                        } catch (InterruptedException e) {
-//                            被打断
-                            break OUTER;
-                        }
+                try {
+                    task = isCore ? tasks.take() : tasks.poll(keepAliveTime, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    if (isCore && !flag.get()) {
+                        System.exit(0);
                     }
-                    task = tasks.poll();
+                    System.out.println(Thread.currentThread().getId() + "  =  " + Thread.currentThread().getState());
                 }
                 if (Objects.nonNull(task)) {
                     task.run();
