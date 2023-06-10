@@ -6,4 +6,5 @@ package com.wj.test3;
  */
 public class Feature1 {
 //    bug fix
+//    fix fix
 }
